@@ -8,7 +8,11 @@ interface MatchScheduleProps {
 
 const MatchSchedule = ({ matches }: MatchScheduleProps) => {
   const formatTeamName = (players: { player: Player }[]) => {
-    return players.map(p => p.player.name).join(' & ');
+    if (!players || !Array.isArray(players)) return '-';
+    return players
+      .filter(p => p && p.player && p.player.name)
+      .map(p => p.player.name)
+      .join(' & ') || '-';
   };
 
   // Group matches by round
@@ -22,6 +26,7 @@ const MatchSchedule = ({ matches }: MatchScheduleProps) => {
   }, {} as Record<number, Match[]>);
 
   const formatDateTime = (dateString: string) => {
+    if (!dateString) return '-';
     const date = new Date(dateString);
     return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   };
