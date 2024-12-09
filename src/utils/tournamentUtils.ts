@@ -8,7 +8,7 @@ export interface Standing {
 }
 
 export const generateTeamName = (players: Player[]): string => {
-  return `Team ${players.map(p => p.name.slice(0, 3)).join("")}`;
+  return players.map(p => p.name.slice(0, 3)).join("");
 };
 
 export const createTeamPlayer = (player: Player) => {
@@ -18,6 +18,115 @@ export const createTeamPlayer = (player: Player) => {
     defense: 0,
     isIcer: false
   };
+};
+
+const generateRoundRobinSchedule = (teams: Player[][], matchesPerTeam: number): Match[] => {
+  const matches: Match[] = [];
+  const startDate = new Date();
+  let numTeams = teams.length;
+  
+  // If odd number of teams, add a "BYE" team
+  if (numTeams % 2 !== 0) {
+    teams.push([{ name: "BYE" }]);
+    numTeams++;
+  }
+  
+  const totalRounds = numTeams - 1;
+  const matchesPerRound = Math.floor(numTeams / 2);
+
+  // Create array of team indices
+  let teamIndices = Array.from({ length: numTeams }, (_, i) => i);
+
+  for (let round = 0; round < totalRounds; round++) {
+    for (let match = 0; match < matchesPerRound; match++) {
+      const team1Index = teamIndices[match];
+      const team2Index = teamIndices[numTeams - 1 - match];
+
+      // Skip matches involving BYE team
+      if (teams[team1Index][0].name === "BYE" || teams[team2Index][0].name === "BYE") {
+        continue;
+      }
+
+      const matchDate = new Date(startDate);
+      matchDate.setHours(startDate.getHours() + (round * matchesPerRound + match) * 2);
+
+      matches.push({
+        id: crypto.randomUUID(),
+        team1Players: teams[team1Index].map(p => createTeamPlayer(p)),
+        team2Players: teams[team2Index].map(p => createTeamPlayer(p)),
+        date: matchDate.toISOString(),
+        isPlayoff: false,
+        round: round + 1,
+        series: matches.length + 1
+      });
+    }
+
+    // Rotate teams (keeping first team fixed)
+    teamIndices = [
+      teamIndices[0],
+      ...teamIndices.slice(-1),
+      ...teamIndices.slice(1, -1)
+    ];
+  }
+
+  return matches;
+};
+
+export const generateMatches = (
+  players: Player[],
+  format: "singles" | "doubles",
+  matchesPerTeam: number
+): Match[] => {
+  let matches: Match[] = [];
+  const numPlayers = players.length;
+
+  if (format === "doubles") {
+    // Create teams of two players
+    const teams: Player[][] = [];
+    for (let i = 0; i < numPlayers; i += 2) {
+      if (i + 1 < numPlayers) {
+        teams.push([players[i], players[i + 1]]);
+      }
+    }
+
+    // Generate round-robin schedule for teams
+    matches = generateRoundRobinSchedule(teams, matchesPerTeam);
+
+  } else {
+    // For singles, treat each player as a team of one
+    const singlePlayerTeams = players.map(player => [player]);
+    matches = generateRoundRobinSchedule(singlePlayerTeams, matchesPerTeam);
+  }
+
+  // Generate playoff matches if there are enough teams/players
+  const minTeamsForPlayoffs = 4;
+  const teamsOrPlayers = format === "doubles" ? Math.floor(numPlayers / 2) : numPlayers;
+
+  if (teamsOrPlayers >= minTeamsForPlayoffs) {
+    const numPlayoffRounds = Math.floor(Math.log2(teamsOrPlayers));
+    const playoffStartDate = new Date(matches[matches.length - 1]?.date || new Date());
+    playoffStartDate.setDate(playoffStartDate.getDate() + 1);
+
+    for (let round = 1; round <= numPlayoffRounds; round++) {
+      const numMatchesInRound = Math.pow(2, numPlayoffRounds - round);
+      for (let match = 0; match < numMatchesInRound; match++) {
+        const matchDate = new Date(playoffStartDate);
+        matchDate.setHours(matchDate.getHours() + (round - 1) * 4);
+
+        matches.push({
+          id: crypto.randomUUID(),
+          team1Players: [createTeamPlayer({ name: `Playoff Seed ${match * 2 + 1}` })],
+          team2Players: [createTeamPlayer({ name: `Playoff Seed ${match * 2 + 2}` })],
+          date: matchDate.toISOString(),
+          isPlayoff: true,
+          round: round,
+          series: match + 1
+        });
+      }
+    }
+  }
+
+  return matches;
 };
 
 export const calculateStandings = (tournament: Tournament): Standing[] => {
@@ -63,134 +172,4 @@ export const calculateStandings = (tournament: Tournament): Standing[] => {
   });
 
   return Array.from(playerStats.values()).sort((a, b) => b.winPercentage - a.winPercentage);
-};
-
-const generateRoundRobinSchedule = (teams: Player[][], matchesPerTeam: number): Match[] => {
-  const matches: Match[] = [];
-  const startDate = new Date();
-  const numTeams = teams.length;
-  
-  // If odd number of teams, add a "BYE" team
-  if (numTeams % 2 !== 0) {
-    teams.push([{ name: "BYE" }]);
-  }
-  
-  const totalRounds = teams.length - 1;
-  const matchesPerRound = Math.floor(teams.length / 2);
-
-  for (let round = 0; round < totalRounds * matchesPerTeam; round++) {
-    const roundTeams = [...teams];
-    const roundNumber = Math.floor(round / totalRounds) + 1;
-    
-    // Rotate teams for each round (keeping first team fixed)
-    const firstTeam = roundTeams[0];
-    const lastTeam = roundTeams[roundTeams.length - 1];
-    
-    for (let i = roundTeams.length - 1; i > 1; i--) {
-      roundTeams[i] = roundTeams[i - 1];
-    }
-    roundTeams[1] = lastTeam;
-    
-    // Create matches for this round
-    for (let i = 0; i < matchesPerRound; i++) {
-      const team1 = roundTeams[i];
-      const team2 = roundTeams[roundTeams.length - 1 - i];
-      
-      // Skip matches involving BYE team
-      if (team1[0].name === "BYE" || team2[0].name === "BYE") continue;
-
-      const matchDate = new Date(startDate);
-      matchDate.setHours(startDate.getHours() + matches.length * 2);
-
-      matches.push({
-        id: crypto.randomUUID(),
-        team1Players: team1.map(p => createTeamPlayer(p)),
-        team2Players: team2.map(p => createTeamPlayer(p)),
-        date: matchDate.toISOString(),
-        isPlayoff: false,
-        round: roundNumber,
-        series: matches.length + 1
-      });
-    }
-  }
-  
-  return matches;
-};
-
-export const generateMatches = (
-  players: Player[],
-  format: "singles" | "doubles",
-  matchesPerTeam: number
-): Match[] => {
-  let matches: Match[] = [];
-  const numPlayers = players.length;
-
-  if (format === "doubles") {
-    // Create teams of two players
-    const teams: Player[][] = [];
-    for (let i = 0; i < numPlayers; i += 2) {
-      if (i + 1 < numPlayers) {
-        teams.push([players[i], players[i + 1]]);
-      }
-    }
-
-    // Generate round-robin schedule for teams
-    matches = generateRoundRobinSchedule(teams, matchesPerTeam);
-
-    // Generate playoff matches if there are enough teams
-    if (teams.length >= 4) {
-      const numPlayoffRounds = Math.floor(Math.log2(teams.length));
-      const playoffStartDate = new Date(matches[matches.length - 1].date);
-      playoffStartDate.setDate(playoffStartDate.getDate() + 1);
-
-      for (let round = 1; round <= numPlayoffRounds; round++) {
-        const numMatchesInRound = Math.pow(2, numPlayoffRounds - round);
-        for (let match = 0; match < numMatchesInRound; match++) {
-          const matchDate = new Date(playoffStartDate);
-          matchDate.setHours(matchDate.getHours() + (round - 1) * 4);
-
-          matches.push({
-            id: crypto.randomUUID(),
-            team1Players: [createTeamPlayer({ name: `Playoff Team ${match * 2 + 1}` })],
-            team2Players: [createTeamPlayer({ name: `Playoff Team ${match * 2 + 2}` })],
-            date: matchDate.toISOString(),
-            isPlayoff: true,
-            round: round,
-            series: match + 1
-          });
-        }
-      }
-    }
-  } else {
-    // For singles, treat each player as a team of one
-    const singlePlayerTeams = players.map(player => [player]);
-    matches = generateRoundRobinSchedule(singlePlayerTeams, matchesPerTeam);
-
-    // Generate playoff matches for singles if there are enough players
-    if (numPlayers >= 4) {
-      const numPlayoffRounds = Math.floor(Math.log2(numPlayers));
-      const playoffStartDate = new Date(matches[matches.length - 1].date);
-      playoffStartDate.setDate(playoffStartDate.getDate() + 1);
-
-      for (let round = 1; round <= numPlayoffRounds; round++) {
-        const numMatchesInRound = Math.pow(2, numPlayoffRounds - round);
-        for (let match = 0; match < numMatchesInRound; match++) {
-          const matchDate = new Date(playoffStartDate);
-          matchDate.setHours(matchDate.getHours() + (round - 1) * 2);
-
-          matches.push({
-            id: crypto.randomUUID(),
-            team1Players: [createTeamPlayer({ name: `Playoff Player ${match * 2 + 1}` })],
-            team2Players: [createTeamPlayer({ name: `Playoff Player ${match * 2 + 2}` })],
-            date: matchDate.toISOString(),
-            isPlayoff: true,
-            round: round,
-            series: match + 1
-          });
-        }
-      }
-    }
-  }
-
-  return matches;
 };
