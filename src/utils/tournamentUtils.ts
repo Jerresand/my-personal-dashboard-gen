@@ -65,14 +65,65 @@ export const calculateStandings = (tournament: Tournament): Standing[] => {
   return Array.from(playerStats.values()).sort((a, b) => b.winPercentage - a.winPercentage);
 };
 
+const generateRoundRobinSchedule = (teams: Player[][], matchesPerTeam: number): Match[] => {
+  const matches: Match[] = [];
+  const startDate = new Date();
+  const numTeams = teams.length;
+  
+  // If odd number of teams, add a "BYE" team
+  if (numTeams % 2 !== 0) {
+    teams.push([{ name: "BYE" }]);
+  }
+  
+  const totalRounds = teams.length - 1;
+  const matchesPerRound = Math.floor(teams.length / 2);
+
+  for (let round = 0; round < totalRounds * matchesPerTeam; round++) {
+    const roundTeams = [...teams];
+    const roundNumber = Math.floor(round / totalRounds) + 1;
+    
+    // Rotate teams for each round (keeping first team fixed)
+    const firstTeam = roundTeams[0];
+    const lastTeam = roundTeams[roundTeams.length - 1];
+    
+    for (let i = roundTeams.length - 1; i > 1; i--) {
+      roundTeams[i] = roundTeams[i - 1];
+    }
+    roundTeams[1] = lastTeam;
+    
+    // Create matches for this round
+    for (let i = 0; i < matchesPerRound; i++) {
+      const team1 = roundTeams[i];
+      const team2 = roundTeams[roundTeams.length - 1 - i];
+      
+      // Skip matches involving BYE team
+      if (team1[0].name === "BYE" || team2[0].name === "BYE") continue;
+
+      const matchDate = new Date(startDate);
+      matchDate.setHours(startDate.getHours() + matches.length * 2);
+
+      matches.push({
+        id: crypto.randomUUID(),
+        team1Players: team1.map(p => createTeamPlayer(p)),
+        team2Players: team2.map(p => createTeamPlayer(p)),
+        date: matchDate.toISOString(),
+        isPlayoff: false,
+        round: roundNumber,
+        series: matches.length + 1
+      });
+    }
+  }
+  
+  return matches;
+};
+
 export const generateMatches = (
   players: Player[],
   format: "singles" | "doubles",
   matchesPerTeam: number
 ): Match[] => {
-  const matches: Match[] = [];
+  let matches: Match[] = [];
   const numPlayers = players.length;
-  const startDate = new Date();
 
   if (format === "doubles") {
     // Create teams of two players
@@ -83,42 +134,25 @@ export const generateMatches = (
       }
     }
 
-    // Generate round-robin matches between teams
-    for (let round = 0; round < matchesPerTeam; round++) {
-      for (let i = 0; i < teams.length; i++) {
-        for (let j = i + 1; j < teams.length; j++) {
-          const matchDate = new Date(startDate);
-          matchDate.setHours(startDate.getHours() + matches.length * 2); // 2 hours between matches
-
-          matches.push({
-            id: crypto.randomUUID(),
-            team1Players: teams[i].map(p => createTeamPlayer(p)),
-            team2Players: teams[j].map(p => createTeamPlayer(p)),
-            date: matchDate.toISOString(),
-            isPlayoff: false,
-            round: round + 1,
-            series: Math.floor(matches.length / 2) + 1
-          });
-        }
-      }
-    }
+    // Generate round-robin schedule for teams
+    matches = generateRoundRobinSchedule(teams, matchesPerTeam);
 
     // Generate playoff matches if there are enough teams
     if (teams.length >= 4) {
       const numPlayoffRounds = Math.floor(Math.log2(teams.length));
       const playoffStartDate = new Date(matches[matches.length - 1].date);
-      playoffStartDate.setDate(playoffStartDate.getDate() + 1); // Playoffs start the next day
+      playoffStartDate.setDate(playoffStartDate.getDate() + 1);
 
       for (let round = 1; round <= numPlayoffRounds; round++) {
         const numMatchesInRound = Math.pow(2, numPlayoffRounds - round);
         for (let match = 0; match < numMatchesInRound; match++) {
           const matchDate = new Date(playoffStartDate);
-          matchDate.setHours(matchDate.getHours() + (round - 1) * 4); // 4 hours between playoff matches
+          matchDate.setHours(matchDate.getHours() + (round - 1) * 4);
 
           matches.push({
             id: crypto.randomUUID(),
-            team1Players: [createTeamPlayer(teams[0][0])], // Placeholder teams
-            team2Players: [createTeamPlayer(teams[1][0])], // Will be determined by previous matches
+            team1Players: [createTeamPlayer({ name: `Playoff Team ${match * 2 + 1}` })],
+            team2Players: [createTeamPlayer({ name: `Playoff Team ${match * 2 + 2}` })],
             date: matchDate.toISOString(),
             isPlayoff: true,
             round: round,
@@ -128,25 +162,9 @@ export const generateMatches = (
       }
     }
   } else {
-    // Singles tournament format
-    for (let round = 0; round < matchesPerTeam; round++) {
-      for (let i = 0; i < numPlayers; i++) {
-        for (let j = i + 1; j < numPlayers; j++) {
-          const matchDate = new Date(startDate);
-          matchDate.setHours(startDate.getHours() + matches.length * 1); // 1 hour between matches
-
-          matches.push({
-            id: crypto.randomUUID(),
-            team1Players: [createTeamPlayer(players[i])],
-            team2Players: [createTeamPlayer(players[j])],
-            date: matchDate.toISOString(),
-            isPlayoff: false,
-            round: round + 1,
-            series: Math.floor(matches.length / 2) + 1
-          });
-        }
-      }
-    }
+    // For singles, treat each player as a team of one
+    const singlePlayerTeams = players.map(player => [player]);
+    matches = generateRoundRobinSchedule(singlePlayerTeams, matchesPerTeam);
 
     // Generate playoff matches for singles if there are enough players
     if (numPlayers >= 4) {
@@ -162,8 +180,8 @@ export const generateMatches = (
 
           matches.push({
             id: crypto.randomUUID(),
-            team1Players: [createTeamPlayer(players[0])], // Placeholder players
-            team2Players: [createTeamPlayer(players[1])], // Will be determined by previous matches
+            team1Players: [createTeamPlayer({ name: `Playoff Player ${match * 2 + 1}` })],
+            team2Players: [createTeamPlayer({ name: `Playoff Player ${match * 2 + 2}` })],
             date: matchDate.toISOString(),
             isPlayoff: true,
             round: round,
