@@ -5,33 +5,8 @@ import { useLocation, useNavigate } from "react-router-dom";
 import TournamentHeader from "./TournamentHeader";
 import TournamentSettings from "./TournamentSettings";
 import PlayerManagement from "./PlayerManagement";
-
-interface Player {
-  name: string;
-}
-
-interface Match {
-  id: string;
-  team1Players: Player[];
-  team2Players: Player[];
-  team1Score?: number;
-  team2Score?: number;
-  date: string;
-  isPlayoff: boolean;
-  round?: number;
-  series?: number;
-}
-
-interface Tournament {
-  id: string;
-  name: string;
-  players: Player[];
-  format: "singles" | "doubles";
-  matchesPerTeam: number;
-  type: "playoffs" | "regular+playoffs";
-  matches: Match[];
-  createdAt: string;
-}
+import { generateMatches } from "@/utils/tournamentUtils";
+import { Player, Tournament } from "@/types/tournament";
 
 const TournamentCreator = () => {
   const [tournamentName, setTournamentName] = useState("");
@@ -55,7 +30,14 @@ const TournamentCreator = () => {
         if (key) {
           const value = localStorage.getItem(key);
           if (value) {
-            groups.push({ name: key, players: JSON.parse(value) });
+            try {
+              const players = JSON.parse(value);
+              if (Array.isArray(players)) {
+                groups.push({ name: key, players });
+              }
+            } catch (e) {
+              console.error("Error parsing group:", e);
+            }
           }
         }
       }
@@ -65,49 +47,58 @@ const TournamentCreator = () => {
 
     // Check if players were passed from group creation
     if (location.state?.players) {
-      setPlayers(location.state.players);
+      setPlayers(location.state.players.map((p: any) => ({
+        name: p.name,
+        totalCups: 0,
+        iced: 0,
+        defense: 0
+      })));
     }
   }, [location.state]);
 
-  const generateSchedule = (players: Player[], matchesPerTeam: number): Match[] => {
-    const matches: Match[] = [];
-    const numPlayers = players.length;
-    
-    // Generate regular season matches
-    for (let round = 0; round < matchesPerTeam; round++) {
-      const roundMatches: Match[] = [];
-      const availablePlayers = [...players];
-
-      while (availablePlayers.length > 1) {
-        const team1Player = availablePlayers.shift()!;
-        const team2Player = availablePlayers.shift()!;
-
-        roundMatches.push({
-          id: crypto.randomUUID(),
-          team1Players: [team1Player],
-          team2Players: [team2Player],
-          date: new Date(Date.now() + matches.length * 24 * 60 * 60 * 1000).toISOString(),
-          isPlayoff: false,
-          round: round + 1
-        });
-      }
-
-      // If there's a player left without an opponent (bye round)
-      if (availablePlayers.length === 1) {
-        roundMatches.push({
-          id: crypto.randomUUID(),
-          team1Players: [availablePlayers[0]],
-          team2Players: [], // Empty array indicates a bye
-          date: new Date(Date.now() + matches.length * 24 * 60 * 60 * 1000).toISOString(),
-          isPlayoff: false,
-          round: round + 1
-        });
-      }
-
-      matches.push(...roundMatches);
+  const handleCreateTournament = () => {
+    if (players.length < 2) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "You need at least 2 players to create a tournament",
+      });
+      return;
     }
 
-    return matches;
+    if (format === "doubles" && players.length % 2 !== 0) {
+      toast({
+        variant: "destructive",
+        title: "Error",
+        description: "You need an even number of players for doubles",
+      });
+      return;
+    }
+
+    const matches = generateMatches(players, format, parseInt(matchesPerTeam));
+
+    const tournament: Tournament = {
+      id: crypto.randomUUID(),
+      name: tournamentName || "New Tournament",
+      players,
+      format,
+      matchesPerTeam: parseInt(matchesPerTeam),
+      type: tournamentType,
+      matches,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Save to localStorage
+    const existingTournaments = JSON.parse(localStorage.getItem('activeTournaments') || '[]');
+    localStorage.setItem('activeTournaments', JSON.stringify([...existingTournaments, tournament]));
+
+    toast({
+      title: "Tournament Created! 🎉",
+      description: `${tournament.name} has been created with ${players.length} players`,
+    });
+
+    // Navigate to the new tournament
+    navigate(`/tournament/${tournament.id}`);
   };
 
   const handleAddPlayer = () => {
@@ -130,51 +121,6 @@ const TournamentCreator = () => {
       setPlayers(group.players);
       setSelectedGroup(groupName);
     }
-  };
-
-  const handleCreateTournament = () => {
-    if (players.length < 4) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "You need at least 4 players to create a tournament",
-      });
-      return;
-    }
-
-    if (format === "doubles" && players.length % 2 !== 0) {
-      toast({
-        variant: "destructive",
-        title: "Error",
-        description: "You need an even number of players for doubles",
-      });
-      return;
-    }
-
-    const matches = generateSchedule(players, parseInt(matchesPerTeam));
-
-    const tournament: Tournament = {
-      id: crypto.randomUUID(),
-      name: tournamentName,
-      players,
-      format,
-      matchesPerTeam: parseInt(matchesPerTeam),
-      type: tournamentType,
-      matches,
-      createdAt: new Date().toISOString(),
-    };
-
-    // Save to localStorage
-    const existingTournaments = JSON.parse(localStorage.getItem('activeTournaments') || '[]');
-    localStorage.setItem('activeTournaments', JSON.stringify([...existingTournaments, tournament]));
-
-    toast({
-      title: "Tournament Created! 🎉",
-      description: `${tournamentName} has been created with ${players.length} players and ${matches.length} matches scheduled`,
-    });
-
-    // Navigate to active tournaments
-    navigate('/active-tournaments');
   };
 
   return (

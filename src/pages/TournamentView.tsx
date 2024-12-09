@@ -4,7 +4,7 @@ import Layout from "@/components/dashboard/Layout";
 import { Button } from "@/components/ui/button";
 import { Users } from "lucide-react";
 import { Tournament } from "@/types/tournament";
-import { calculateStandings, Standing } from "@/utils/tournamentUtils";
+import { calculateStandings } from "@/utils/tournamentUtils";
 import MatchSchedule from "@/components/tournament/MatchSchedule";
 import TeamView from "@/components/tournament/TeamView";
 import StandingsTable from "@/components/tournament/StandingsTable";
@@ -14,24 +14,29 @@ const TournamentView = () => {
   const [tournament, setTournament] = useState<Tournament | null>(null);
   const [showStatistics, setShowStatistics] = useState(false);
   const [showTeams, setShowTeams] = useState(false);
-  const [standings, setStandings] = useState<Standing[]>([]);
 
   useEffect(() => {
-    const tournaments = JSON.parse(localStorage.getItem("activeTournaments") || "[]");
-    const tournament = tournaments.find((t: Tournament) => t.id === id);
-    if (tournament) {
-      setTournament(tournament);
-      setStandings(calculateStandings(tournament));
-    }
+    const loadTournament = () => {
+      try {
+        const tournaments = JSON.parse(localStorage.getItem("activeTournaments") || "[]");
+        const tournament = tournaments.find((t: Tournament) => t.id === id);
+        if (tournament) {
+          setTournament(tournament);
+        }
+      } catch (e) {
+        console.error("Error loading tournament:", e);
+      }
+    };
+    loadTournament();
   }, [id]);
 
-  const handleTeamNameUpdate = (teamId: string, newName: string) => {
-    const teamNames = JSON.parse(localStorage.getItem("tournamentTeamNames") || "{}");
-    teamNames[`${id}-${teamId}`] = newName;
-    localStorage.setItem("tournamentTeamNames", JSON.stringify(teamNames));
-  };
-
-  if (!tournament) return <div>Tournament not found</div>;
+  if (!tournament) {
+    return (
+      <Layout>
+        <div className="text-white">Tournament not found</div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout>
@@ -69,12 +74,9 @@ const TournamentView = () => {
         </div>
 
         {showTeams ? (
-          <TeamView 
-            matches={tournament.matches} 
-            onTeamNameUpdate={handleTeamNameUpdate}
-          />
+          <TeamView tournament={tournament} />
         ) : showStatistics ? (
-          <StandingsTable standings={standings} />
+          <StandingsTable standings={calculateStandings(tournament)} />
         ) : (
           <MatchSchedule matches={tournament.matches} />
         )}
