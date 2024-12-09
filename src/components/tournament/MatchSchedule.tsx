@@ -15,8 +15,8 @@ const MatchSchedule = ({ matches }: MatchScheduleProps) => {
       .join(' & ') || '-';
   };
 
-  // Group matches by round
-  const matchesByRound = matches.reduce((acc, match) => {
+  // Ensure matches is an array and group them by round
+  const matchesByRound = (matches || []).reduce((acc, match) => {
     const round = match.round || 1;
     if (!acc[round]) {
       acc[round] = [];
@@ -30,6 +30,18 @@ const MatchSchedule = ({ matches }: MatchScheduleProps) => {
     const date = new Date(dateString);
     return `${date.toLocaleDateString()} ${date.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`;
   };
+
+  // If there are no matches, show a message
+  if (!matches || matches.length === 0) {
+    return (
+      <div className="space-y-6">
+        <div className="bg-dashboard-card p-6 rounded-lg">
+          <h3 className="text-xl font-bold text-white mb-4">Tournament Schedule</h3>
+          <p className="text-dashboard-text">No matches scheduled yet.</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">
